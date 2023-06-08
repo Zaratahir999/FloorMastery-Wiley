@@ -11,6 +11,9 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.LinkedList;
 import java.util.Scanner;
+import java.time.format.DateTimeFormatter;
+
+import java.time.LocalDate;
 
 import com.floor.dto.Order;
 import com.floor.dto.Product;
@@ -22,43 +25,7 @@ public class FloorDataAccessImpl implements FloorDataAccess {
     private static final String ORDER_FILE_PATH = "Orders/";
 
 
-    @Override
-    public boolean writeOrderFiles(LinkedList<Order> orders) {
-        try {
-            String fileName = generateOrderFileName();
-            FileWriter fileWriter = new FileWriter(fileName);
-            PrintWriter printWriter = new PrintWriter(fileWriter);
-
-            printWriter.println("OrderNumber,CustomerName,State,TaxRate,ProductType,Area,"
-                    + "CostPerSquareFoot,LaborCostPerSquareFoot,MaterialCost,LaborCost,Tax,Total");
-
-            for (Order order : orders) {
-                printWriter.println(order.getOrderNumber() + ","
-                        + order.getCustomerName() + ","
-                        + order.getState() + ","
-                        + order.getTaxRate() + ","
-                        + order.getProductType() + ","
-                        + order.getArea() + ","
-                        + order.getCostPerSquareFoot() + ","
-                        + order.getLabourCostPerSquareFoot() + ","
-                        + order.getMaterialCost() + ","
-                        + order.getLabourCost() + ","
-                        + order.getTax() + ","
-                        + order.getTotal());
-            }
-
-            printWriter.flush();
-            printWriter.close();
-            fileWriter.close();
-
-            return true;
-
-        } catch (IOException e) {
-            e.printStackTrace();
-
-            return false;
-        }
-    }
+   
 
     @Override
     public LinkedList<Order> readOrderFile() {
@@ -107,22 +74,44 @@ public class FloorDataAccessImpl implements FloorDataAccess {
         return orders;
     }
 
-    private String generateOrderFileName() {
-        SimpleDateFormat dateFormat = new SimpleDateFormat("MMddyyyy");
-        String date = dateFormat.format(new Date());
-        String fileName = ORDER_FILE_PATH + "Orders_" + date + ".txt";
+    @Override
+    public boolean writeOrderFiles(LinkedList<Order> orders) {
+        try {
+            for (Order order : orders) {
+                String fileName = generateOrderFileName(order.getDate());
+                FileWriter fileWriter = new FileWriter(fileName, true);
+                PrintWriter printWriter = new PrintWriter(fileWriter);
 
-        // Check if the file already exists
-        int fileNumber = 1;
-        File file = new File(fileName);
-        while (file.exists()) {
-            fileName = ORDER_FILE_PATH + "Orders_" + date + "_" + fileNumber + ".txt";
-            file = new File(fileName);
-            fileNumber++;
+                printWriter.println(order.getOrderNumber() + ","
+                        + order.getCustomerName() + ","
+                        + order.getState() + ","
+                        + order.getTaxRate() + ","
+                        + order.getProductType() + ","
+                        + order.getArea() + ","
+                        + order.getCostPerSquareFoot() + ","
+                        + order.getLabourCostPerSquareFoot() + ","
+                        + order.getMaterialCost() + ","
+                        + order.getLabourCost() + ","
+                        + order.getTax() + ","
+                        + order.getTotal());
+
+                printWriter.flush();
+                printWriter.close();
+                fileWriter.close();
+            }
+
+            return true;
+        } catch (IOException e) {
+            e.printStackTrace();
+            return false;
         }
-
-        return fileName;
     }
+
+    private String generateOrderFileName(LocalDate date) {
+        String formattedDate = date.format(DateTimeFormatter.ofPattern("MMddyyyy"));
+        return ORDER_FILE_PATH + "Orders_" + formattedDate + ".txt";
+    }
+
 
 
     @Override
