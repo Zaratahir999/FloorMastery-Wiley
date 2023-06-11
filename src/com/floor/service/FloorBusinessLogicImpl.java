@@ -5,6 +5,12 @@ import java.time.LocalDate;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.nio.file.*;
+import java.time.format.DateTimeParseException;
+import java.io.*;
+import java.util.*;
+import java.time.format.DateTimeFormatter;
+import java.time.LocalDate;
 import java.util.stream.Collectors;
 
 import com.floor.dto.Order;
@@ -12,93 +18,149 @@ import com.floor.dto.Product;
 import com.floor.dto.Tax;
 import com.floor.persistence.FloorDataAccess;
 import com.floor.persistence.FloorDataAccessImpl;
+import java.util.ArrayList;
 
 public class FloorBusinessLogicImpl implements FloorBusinessLogic {
     private LinkedList<Order> ordersList = new LinkedList<>();
+  
+
+	
     private FloorDataAccess dataAccess;
 
     public FloorBusinessLogicImpl() {
         this.dataAccess = new FloorDataAccessImpl();
     }
-
+    
+    
+    
+   //getting the files from data access layer, get unique number and pass to UI 
     @Override
     public boolean addOrder(Order order) {
+    	//load the files and add the file to that list
+    	List<String> orderFiles = dataAccess.getAllOrderFiles();
         // Generate order number based on the next available order #
-        int nextOrderNumber = getNextOrderNumber();
+    	int nextOrderNumber = dataAccess.getMaxOrderNumber() +1;
         order.setOrderNumber(nextOrderNumber);
 
         // Perform calculations
         calculateOrder(order);
 
-        // Add order to the list
         return ordersList.add(order);
+        }
+    
+    
+    @Override
+    public void saveOrder() {
+
+        dataAccess.writeOrderFiles(ordersList);
     }
+  
+    
+
 
     @Override
-    public boolean editOrder(LocalDate orderDate, int orderNumber, Order editedOrder) {
-        Order existingOrder = getOrder(orderDate, orderNumber);
+    public List<String> getAllOrderFiles() {
+        return dataAccess.getAllOrderFiles();
+    }
 
-        if (existingOrder == null) {
-            return false;
-        }
+    
+    
+    @Override
+    public boolean editOrder(LocalDate orderDate, int orderNumber, Order newOrder) {
+        // Get all order files
+        List<String> orderFiles = dataAccess.getAllOrderFiles();
 
-        // Preserve existing data if user hits Enter without entering new data
-        if (editedOrder.getCustomerName().isEmpty()) {
-            editedOrder.setCustomerName(existingOrder.getCustomerName());
-        }
-        if (editedOrder.getState().isEmpty()) {
-            editedOrder.setState(existingOrder.getState());
-        }
-        if (editedOrder.getProductType().isEmpty()) {
-            editedOrder.setProductType(existingOrder.getProductType());
-        }
-        if (editedOrder.getArea().equals(BigDecimal.ZERO)) {
-            editedOrder.setArea(existingOrder.getArea());
-        }
-
-        // Perform calculations
-        calculateOrder(editedOrder);
-
-        // Replace the order in the list
-        Iterator<Order> iterator = ordersList.iterator();
-        while (iterator.hasNext()) {
-            Order order = iterator.next();
-            if (order.getDate().equals(orderDate) && order.getOrderNumber() == orderNumber) {
-                iterator.remove();
+        // Find the order file for the given date
+        String orderFile = null;
+        String targetFile = "Orders_" + orderDate.format(DateTimeFormatter.ofPattern("MMddyyyy")) + ".txt";
+        for (String file : orderFiles) {
+            if (file.equals(targetFile)) {
+                orderFile = file;
                 break;
             }
         }
-        return ordersList.add(editedOrder);
-    }
 
-    @Override
-    public boolean removeOrder(LocalDate orderDate, int orderNumber) {
-        Iterator<Order> iterator = ordersList.iterator();
-        while (iterator.hasNext()) {
-            Order order = iterator.next();
-            if (order.getDate().equals(orderDate) && order.getOrderNumber() == orderNumber) {
-                iterator.remove();
+        if (orderFile == null) {
+            return false;
+        }
+
+        // Load the orders from the file
+        LinkedList<Order> orders = dataAccess.readOrderFile(orderFile);
+
+        // Find the order in the list
+        for (Order order : orders) {
+            if (order.getOrderNumber() == orderNumber) {
+                // Update the order details
+                order.setDate(newOrder.getDate());
+                order.setCustomerName(newOrder.getCustomerName());
+                order.setState(newOrder.getState());
+                order.setProductType(newOrder.getProductType());
+                order.setArea(newOrder.getArea());
+                order.setTaxRate(newOrder.getTaxRate());
+
+                // Perform calculations
+                calculateOrder(order);
+
+                // Save the orders back to the file
+                dataAccess.writeOrderFiles(orders);
+
                 return true;
             }
         }
+
         return false;
     }
 
-    @Override
-    public LinkedList<Order> getAllOrders() {
-        return ordersList;
-    }
 
     @Override
-    public Order getOrder(LocalDate orderDate, int orderNumber) {
-        for (Order order : ordersList) {
-            if (order.getDate().equals(orderDate) && order.getOrderNumber() == orderNumber) {
-                return order;
+    public boolean removeOrder(LocalDate orderDate, int orderNumber) {
+        // Get all order files
+        List<String> orderFiles = dataAccess.getAllOrderFiles();
+
+        // Find the order file for the given date
+        String orderFile = null;
+        String targetFile = "Orders_" + orderDate.format(DateTimeFormatter.ofPattern("MMddyyyy")) + ".txt";
+        for (String file : orderFiles) {
+            if (file.equals(targetFile)) {
+                orderFile = file;
+                break;
             }
         }
-        return null;
+
+        if (orderFile == null) {
+            return false;
+        }
+
+        // Load the orders from the file
+        LinkedList<Order> orders = dataAccess.readOrderFile(orderFile);
+
+        // Find the order in the list
+        Order orderToRemove = null;
+        for (Order order : orders) {
+            if (order.getOrderNumber() == orderNumber) {
+                orderToRemove = order;
+                break;
+            }
+        }
+
+        if (orderToRemove == null) {
+            return false;
+        }
+
+        // Remove the order from the list
+        orders.remove(orderToRemove);
+
+        // Save the orders back to the file
+        dataAccess.writeOrderFiles(orders);
+
+        return true;
     }
 
+    
+    
+    
+    
+    
     @Override
     public void calculateOrder(Order order) {
         // Fetch product and tax data
@@ -109,24 +171,24 @@ public class FloorBusinessLogicImpl implements FloorBusinessLogic {
         Product product = getProductByType(products, order.getProductType());
         if (product != null) {
             BigDecimal costPerSquareFoot = product.getCostPerSquareFoot();
+            BigDecimal labourCostPerSquareFoot = product.getLabourCostPerSquareFoot();
+            order.setCostPerSquareFoot(costPerSquareFoot);
+            order.setLabourCostPerSquareFoot(labourCostPerSquareFoot);
+            
+            
+            
             BigDecimal area = order.getArea();
             BigDecimal materialCost = costPerSquareFoot.multiply(area);
-            order.setMaterialCost(materialCost);
-        } else {
-            order.setMaterialCost(BigDecimal.ZERO); // Set to zero if product not found
-        }
-
-        // Calculate labour cost
-        if (product != null) {
-            BigDecimal labourCostPerSquareFoot = product.getLabourCostPerSquareFoot();
-            BigDecimal area = order.getArea();
             BigDecimal labourCost = labourCostPerSquareFoot.multiply(area);
+            order.setMaterialCost(materialCost);
             order.setLabourCost(labourCost);
         } else {
-            order.setLabourCost(BigDecimal.ZERO); // Set to zero if product not found
+        	 order.setCostPerSquareFoot(BigDecimal.ZERO);
+             order.setLabourCostPerSquareFoot(BigDecimal.ZERO);
+             order.setMaterialCost(BigDecimal.ZERO);
+             order.setLabourCost(BigDecimal.ZERO);
         }
-
-        // Calculate tax
+     // Calculate tax
         String state = order.getState();
         Tax tax = getTaxByState(taxes, state);
         if (tax != null) {
@@ -142,6 +204,7 @@ public class FloorBusinessLogicImpl implements FloorBusinessLogic {
         BigDecimal total = order.getMaterialCost().add(order.getLabourCost()).add(order.getTax());
         order.setTotal(total);
     }
+
 
     @Override
     public LinkedList<Product> getAllProducts() {
@@ -170,16 +233,21 @@ public class FloorBusinessLogicImpl implements FloorBusinessLogic {
         return BigDecimal.ZERO;
     }
 
+    
     @Override
     public void exportAllData() {
-        LinkedList<Order> orders = getAllOrders();
-        dataAccess.writeOrderFiles(orders);
+        List<String> orderFiles = dataAccess.getAllOrderFiles();
+        List<Order> allOrders = new ArrayList<>();
+
+        for (String orderFile : orderFiles) {
+            List<Order> orders = dataAccess.readOrderFile(orderFile);
+            allOrders.addAll(orders);
+        }
+
+        dataAccess.exportAllOrders(allOrders);
     }
 
-    private int getNextOrderNumber() {
-        int maxOrderNumber = ordersList.stream().mapToInt(Order::getOrderNumber).max().orElse(0);
-        return maxOrderNumber + 1;
-    }
+
 
     private Product getProductByType(LinkedList<Product> products, String productType) {
         for (Product product : products) {
@@ -218,4 +286,34 @@ public class FloorBusinessLogicImpl implements FloorBusinessLogic {
         }
         return ordersByDate;
     }
+
+
+
+	
+	@Override
+	public LinkedList<Order> getOrdersByDate(LocalDate orderDate) {
+	    // Get all order files
+	    List<String> orderFiles = dataAccess.getAllOrderFiles();
+
+	    // Find the order file for the given date
+	    String orderFile = null;
+	    String targetFile = "Orders_" + orderDate.format(DateTimeFormatter.ofPattern("MMddyyyy")) + ".txt";
+	    for (String file : orderFiles) {
+	        if (file.equals(targetFile)) {
+	            orderFile = file;
+	            break;
+	        }
+	    }
+
+	    if (orderFile == null) {
+	        return new LinkedList<>();
+	    }
+
+	    // Load the orders from the file
+	    return dataAccess.readOrderFile(orderFile);
+	}
+
+
+	
 }
+

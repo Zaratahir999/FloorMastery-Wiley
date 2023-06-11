@@ -15,10 +15,13 @@ public interface FloorDataAccess {
 	public boolean writeProductFiles(LinkedList<Product> products);
 	
 	public boolean writeTaxFiles(LinkedList<Tax> taxes);
-	LinkedList<Order> readOrderFile();
-    LinkedList<Product> readProductFile();
+	public LinkedList<Order> readOrderFile(String orderFile);
+	LinkedList<Product> readProductFile();
     LinkedList<Tax> readTaxFile();
 	
-	
-	
+    //public LinkedList<Order> readOrderFiles(List<String> filenames);
+    public boolean exportAllOrders(List<Order> orders);
+    public int getMaxOrderNumber();
+    
+    List<String> getAllOrderFiles();
 }
